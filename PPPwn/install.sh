@@ -1,6 +1,11 @@
 #!/bin/bash
 
-sudo apt install pppoe dnsmasq iptables nginx php-fpm nmap -y
+
+if [ ! -d /boot/firmware/PPPwn/payloads ]; then
+  sudo mkdir /boot/firmware/PPPwn/payloads
+fi
+if [ -z $1 ] ;then
+sudo apt install pppoe dnsmasq iptables nginx php-fpm nmap at -y
 echo 'bogus-priv
 expand-hosts
 domain-needed
@@ -47,6 +52,10 @@ echo 'server {
 	location / {
 		try_files $uri $uri/ =404;
 	}
+	error_page 404 = @mainindex;
+	location @mainindex {
+	return 302 /;
+	}
 	location ~ \.php$ {
     include snippets/fastcgi-php.conf;
     fastcgi_pass unix:/var/run/php/php'$PHPVER'-fpm.sock;
@@ -62,27 +71,8 @@ echo 'ACTION=="add", KERNEL=="sd*", SUBSYSTEMS=="usb|scsi", DRIVERS=="sd", SYMLI
 ACTION=="remove", SUBSYSTEM=="block", RUN+="/boot/firmware/PPPwn/pwnumount.sh $kernel"' | sudo tee /etc/udev/rules.d/99-pwnmnt.rules
 sudo udevadm control --reload
 fi
-PITYP=$(tr -d '\0' </proc/device-tree/model) 
-if [[ $PITYP == *"Raspberry Pi 4"* ]] || [[ $PITYP == *"Raspberry Pi 5"* ]] ;then
-if [ ! -f /media/PPPwn/pwndev ]; then
-sudo mkdir /media/PPPwn
-sudo dd if=/dev/zero of=/media/PPPwn/pwndev bs=4096 count=65535 
-sudo mkdosfs /media/PPPwn/pwndev -F 32  
-echo 'dtoverlay=dwc2' | sudo tee -a /boot/firmware/config.txt
-sudo mkdir /media/pwndev
-sudo mount -o loop /media/PPPwn/pwndev /media/pwndev
-sudo mkdir /media/pwndev/payloads
-sudo cp "/home/$SUDO_USER/PI-Pwn/USB Drive/goldhen.bin" /media/pwndev
-sudo umount /media/pwndev
-UDEV=$(sudo blkid | grep '^/dev/sd' | cut -f1 -d':')
-if [[ $UDEV == *"dev/sd"* ]] ;then
-sudo mount -o loop $UDEV /media/pwndev
-sudo mkdir /media/pwndev/payloads
-sudo cp "/home/$SUDO_USER/PI-Pwn/USB Drive/goldhen.bin" /media/pwndev
-sudo umount /media/pwndev 
-fi
-sudo rm -f -r /media/pwndev
-fi
+if [ -f /media/pwndrives ]; then
+sudo mkdir /media/pwndrives
 fi
 PPSTAT=$(sudo systemctl list-unit-files --state=enabled --type=service|grep pppoe) 
 if [[ ! $PPSTAT == "" ]] ; then
@@ -91,10 +81,165 @@ fi
 if [ ! -f /boot/firmware/PPPwn/ports.txt ]; then
 echo '2121,3232,9090,8080,12800,1337' | sudo tee /boot/firmware/PPPwn/ports.txt
 fi
+sudo sed -i 's^"exit 0"^"exit"^g' /etc/rc.local
+sudo sed -i 's^sudo bash /boot/firmware/PPPwn/devboot.sh \&^^g' /etc/rc.local
+sudo sed -i 's^exit 0^sudo bash /boot/firmware/PPPwn/devboot.sh \&\n\nexit 0^g' /etc/rc.local
+if [[ $(dpkg-query -W --showformat='${Status}\n' python3-scapy|grep "install ok installed")  == "" ]] ;then
+while true; do
+read -p "$(printf '\r\n\r\n\033[36mDo you want to enable the option to use the python(slower) PPPwn\033[36m(Y|N)?: \033[0m')" pypwnopt
+case $pypwnopt in
+[Yy]* ) 
+sudo apt install python3 python3-scapy -y
+break;;
+[Nn]* ) 
+UPYPWN="false"
+echo -e '\033[35mThe python version of PPPwn will not be available\033[0m'
+break;;
+* ) 
+echo -e '\033[31mPlease answer Y or N\033[0m';;
+esac
+done
+fi
+if [[ $(dpkg-query -W --showformat='${Status}\n' vsftpd|grep "install ok installed")  == "" ]] ;then
+while true; do
+read -p "$(printf '\r\n\r\n\033[36mDo you want to install a FTP server? (Y|N):\033[0m ')" ftpq
+case $ftpq in
+[Yy]* ) 
+sudo apt-get install vsftpd -y
+echo "listen=YES
+local_enable=YES
+dirmessage_enable=YES
+use_localtime=YES
+xferlog_enable=YES
+connect_from_port_20=YES
+secure_chroot_dir=/var/run/vsftpd/empty
+pam_service_name=vsftpd
+rsa_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
+rsa_private_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+ssl_enable=NO
+anonymous_enable=NO
+local_enable=YES
+write_enable=YES
+local_umask=077
+allow_writeable_chroot=YES
+chroot_local_user=YES
+user_sub_token=$USER
+local_root=/boot/firmware/PPPwn" | sudo tee /etc/vsftpd.conf
+sudo sed -i 's^root^^g' /etc/ftpusers
+echo -e '\n\n\033[33mTo use FTP you must set the \033[36mroot\033[33m account password so you can login to the ftp server with full write permissions\033[0m\n'
+while true; do
+read -p "$(printf '\r\n\033[36mDo you want to set the \033[36mroot\033[36m account password\r\n\r\n\033[36m(Y|N)?: \033[0m')" rapw
+case $rapw in
+[Yy]* ) 
+sudo passwd root
+echo -e '\r\n\033[33mYou can log into the ftp server with\r\nUsername: \033[36mroot\033[33m\r\nand the password you just set\033[0m'
+break;;
+[Nn]* ) 
+echo -e '\r\n\033[33mYou can log into the ftp server with\r\nUsername: root\r\nand the password you just set\033[0m'
+break;;
+* ) echo -e '\033[31mPlease answer Y or N\033[0m';;
+esac
+done
+echo -e '\033[32mFTP Installed\033[0m'
+break;;
+[Nn]* ) echo -e '\033[35mSkipping FTP install\033[0m'
+break;;
+* ) echo -e '\033[31mPlease answer Y or N\033[0m';;
+esac
+done
+fi
+if [[ $(dpkg-query -W --showformat='${Status}\n' samba|grep "install ok installed")  == "" ]] ;then
+while true; do
+read -p "$(printf '\r\n\r\n\033[36mDo you want to setup a SAMBA share? (Y|N):\033[0m ')" smbq
+case $smbq in
+[Yy]* ) 
+sudo apt-get install samba samba-common-bin -y
+echo '[global]
+;   interfaces = 127.0.0.0/8 eth0
+;   bind interfaces only = yes
+   log file = /var/log/samba/log.%m
+   max log size = 1000
+   logging = file
+   panic action = /usr/share/samba/panic-action %d
+   server role = standalone server
+   obey pam restrictions = yes
+   unix password sync = yes
+   passwd program = /usr/bin/passwd %u
+   passwd chat = *Enter\snew\s*\spassword:* %n\n *Retype\snew\s*\spassword:* %n\n *password\supdated\ssuccessfully* .
+   pam password change = yes
+   map to guest = bad user
+;   logon path = \\%N\profiles\%U
+;   logon drive = H:
+;   logon script = logon.cmd
+; add user script = /usr/sbin/useradd --create-home %u
+; add machine script  = /usr/sbin/useradd -g machines -c "%u machine account" -d /var/lib/samba -s /bin/false %u
+; add group script = /usr/sbin/addgroup --force-badname %g
+;   include = /home/samba/etc/smb.conf.%m
+;   idmap config * :              backend = tdb
+;   idmap config * :              range   = 3000-7999
+;   idmap config YOURDOMAINHERE : backend = tdb
+;   idmap config YOURDOMAINHERE : range   = 100000-999999
+;   template shell = /bin/bash
+   usershare allow guests = yes
+[homes]
+   comment = Home Directories
+   browseable = no
+   read only = yes
+   create mask = 0700
+   directory mask = 0700
+   valid users = %S
+;[netlogon]
+;   comment = Network Logon Service
+;   path = /home/samba/netlogon
+;   guest ok = yes
+;   read only = yes
+;[profiles]
+;   comment = Users profiles
+;   path = /home/samba/profiles
+;   guest ok = no
+;   browseable = no
+;   create mask = 0600
+;   directory mask = 0700
+[printers]
+   comment = All Printers
+   browseable = no
+   path = /var/tmp
+   printable = yes
+   guest ok = no
+   read only = yes
+   create mask = 0700
+[print$]
+   comment = Printer Drivers
+   path = /var/lib/samba/printers
+   browseable = yes
+   read only = yes
+   guest ok = no
+;   write list = root, @lpadmin
+[pppwn]
+path = /boot/firmware/PPPwn/
+writeable=Yes
+create mask=0777
+read only = no
+directory mask=0777
+force create mask = 0777
+force directory mask = 0777
+force user = root
+force group = root
+public=yes' | sudo tee /etc/samba/smb.conf
+sudo systemctl unmask smbd
+sudo systemctl enable smbd
+echo -e '\033[32mSamba installed\033[0m'
+break;;
+[Nn]* ) echo -e '\033[35mSkipping SAMBA install\033[0m'
+break;;
+* ) echo -e '\033[31mPlease answer Y or N\033[0m';;
+esac
+done
+fi
 if [ -f /boot/firmware/PPPwn/config.sh ]; then
 while true; do
-read -p "$(printf '\r\n\r\n\033[36mConfig found, Do you want to change the stored settings\033[36m(Y|N)?: \033[0m')" cppp
-case $cppp in
+read -p "$(printf '\r\n\r\n\033[36mConfig found, Do you want to change the stored settings\033[36m(Y|N)?: \033[0m')" conf
+case $conf in
 [Yy]* ) 
 break;;
 [Nn]* ) 
@@ -107,26 +252,26 @@ echo -e '\033[31mPlease answer Y or N\033[0m';;
 esac
 done
 fi
+if [[ $(dpkg-query -W --showformat='${Status}\n' python3-scapy|grep "install ok installed")  == "" ]] ;then
+UPYPWN="false"
+else
 while true; do
-read -p "$(printf '\r\n\r\n\033[36mDo you want to detect console shutdown and restart PPPwn\r\n\r\n\033[36m(Y|N)?: \033[0m')" dlnk
-case $dlnk in
+read -p "$(printf '\r\n\r\n\033[36mDo you want to use the old python version of pppwn, It is much slower\r\n\r\n\033[36m(Y|N)?: \033[0m')" pypwn
+case $pypwn in
 [Yy]* ) 
-DTLNK="true"
-echo -e '\033[32mDetect shutdown enabled\033[0m'
+UPYPWN="true"
+echo -e '\033[32mThe Python version of PPPwn is being used\033[0m'
 break;;
 [Nn]* ) 
-echo -e '\033[35mDetect shutdown disabled\033[0m'
-DTLNK="false"
+echo -e '\033[35mThe C++ version of PPPwn is being used\033[0m'
+UPYPWN="false"
 break;;
 * ) echo -e '\033[31mPlease answer Y or N\033[0m';;
 esac
 done
+fi
 while true; do
-read -p "$(printf '\r\n\r\n\033[36mDo you want the console to connect to the internet after PPPwn? (Y|N):\033[0m ')" pppq
-case $pppq in
-[Yy]* ) 
-while true; do
-read -p "$(printf '\r\n\r\n\033[36mDo you want to set a PPPoE username and password?\r\nif you select no then these defaults will be used\r\n\r\nUsername: \033[33mppp\r\n\033[36mPassword: \033[33mppp\r\n\r\n\033[36m(Y|N)?: \033[0m')" wapset
+read -p "$(printf '\r\n\r\n\033[36mDo you want to change the PPPoE username and password?\r\nif you select no then these defaults will be used\r\n\r\nUsername: \033[33mppp\r\n\033[36mPassword: \033[33mppp\r\n\r\n\033[36m(Y|N)?: \033[0m')" wapset
 case $wapset in
 [Yy]* ) 
 while true; do
@@ -170,12 +315,30 @@ break;;
 esac
 done
 echo '"'$PPPU'"  *  "'$PPPW'"  192.168.2.2' | sudo tee /etc/ppp/pap-secrets
-INET="true"
-SHTDN="false"
-echo -e '\033[32mPPPoE installed\033[0m'
+while true; do
+read -p "$(printf '\r\n\r\n\033[36mDo you want to detect console shutdown and restart PPPwn\r\n\r\n\033[36m(Y|N)?: \033[0m')" dlnk
+case $dlnk in
+[Yy]* ) 
+DTLNK="true"
+echo -e '\033[32mDetect shutdown enabled\033[0m'
 break;;
 [Nn]* ) 
-echo -e '\033[35mSkipping PPPoE install\033[0m'
+echo -e '\033[35mDetect shutdown disabled\033[0m'
+DTLNK="false"
+break;;
+* ) echo -e '\033[31mPlease answer Y or N\033[0m';;
+esac
+done
+while true; do
+read -p "$(printf '\r\n\r\n\033[36mDo you want the console to connect to the internet after PPPwn? (Y|N):\033[0m ')" pppq
+case $pppq in
+[Yy]* ) 
+INET="true"
+SHTDN="false"
+echo -e '\033[32mConsole internet access enabled\033[0m'
+break;;
+[Nn]* ) 
+echo -e '\033[35mConsole internet access disabled\033[0m'
 INET="false"
 while true; do
 read -p "$(printf '\r\n\r\n\033[36mDo you want the pi to shutdown after pwn success\r\n\r\n\033[36m(Y|N)?: \033[0m')" pisht
@@ -210,14 +373,14 @@ break;;
 esac
 done
 while true; do
-read -p "$(printf '\r\n\r\n\033[36mDo you want to enable rest mode support\r\n\r\n\033[36m(Y|N)?: \033[0m')" restmd
+read -p "$(printf '\r\n\r\n\033[36mDo you want to try and detect if goldhen is running and skip running pppwn if found, useful for rest mode\r\n\r\n\033[36m(Y|N)?: \033[0m')" restmd
 case $restmd in
 [Yy]* ) 
 RESTM="true"
-echo -e '\033[32mRest mode support enabled\033[0m'
+echo -e '\033[32mGoldhen detection enabled\033[0m'
 break;;
 [Nn]* ) 
-echo -e '\033[35mRest mode support disabled\033[0m'
+echo -e '\033[35mGoldhen detection disabled\033[0m'
 RESTM="false"
 break;;
 * ) echo -e '\033[31mPlease answer Y or N\033[0m';;
@@ -272,15 +435,15 @@ read -p "$(printf '\r\n\r\n\033[36mWould you like to change the firmware version
 case $fwset in
 [Yy]* ) 
 while true; do
-read -p  "$(printf '\033[33mEnter the firmware version [11.00 | 9.00]: \033[0m')" FWV
+read -p  "$(printf '\033[33mEnter the firmware version [ 7.00 | 7.01 | 7.02 | 7.50 | 7.51 | 7.55 | 8.00 | 8.01 | 8.03 | 8.50 | 8.52 | 9.00 | 9.03 | 9.04 | 9.50 | 9.51 | 9.60 | 10.00 | 10.01 | 10.50 | 10.70 | 10.71 | 11.00 ]: \033[0m')" FWV
 case $FWV in
 "" ) 
  echo -e '\033[31mCannot be empty!\033[0m';;
  * )  
 if grep -q '^[0-9.]*$' <<<$FWV ; then 
 
-if [[ ! "$FWV" =~ ^("11.00"|"9.00")$ ]]  ; then
-echo -e '\033[31mThe version must be 11.00 or 9.00\033[0m';
+if [[ ! "$FWV" =~ ^("7.00"|"7.01"|"7.02"|"7.50"|"7.51"|"7.55"|"8.00"|"8.01"|"8.03"|"8.50"|"8.52"|"9.00"|"9.03"|"9.04"|"9.50"|"9.51"|"9.60"|"10.00"|"10.01"|"10.50"|"10.70"|"10.71"|"11.00")$ ]]  ; then
+echo -e '\033[31mThe version must be [ 7.00 | 7.01 | 7.02 | 7.50 | 7.51 | 7.55 | 8.00 | 8.01 | 8.03 | 8.50 | 8.52 | 9.00 | 9.03 | 9.04 | 9.50 | 9.51 | 9.60 | 10.00 | 10.01 | 10.50 | 10.70 | 10.71 | 11.00 ]\033[0m';
 else 
 break;
 fi
@@ -329,16 +492,20 @@ break;;
 * ) echo -e '\033[31mPlease answer Y or N\033[0m';;
 esac
 done
+PITYP=$(tr -d '\0' </proc/device-tree/model) 
 if [[ $PITYP == *"Raspberry Pi 4"* ]] || [[ $PITYP == *"Raspberry Pi 5"* ]] ;then
 while true; do
 read -p "$(printf '\r\n\r\n\033[36mDo you want the pi to act as a flash drive to the console\r\n\r\n\033[36m(Y|N)?: \033[0m')" vusb
 case $vusb in
 [Yy]* ) 
-echo -e '\033[32mThe pi will mount as a drive and goldhen.bin has been placed in the drive\n\033[33mYou must plug the pi into the console usb port using the usb-c of the pi\033[0m'
+echo -e '\033[32mThe pi will mount as a drive\n\033[33mYou must plug the pi into the console usb port using the \033[35musb-c\033[33m of the pi and the usb drive in the pi must contain a folder named \033[35mpayloads\033[0m'
+sudo sed -i "s^dtoverlay=dwc2^^g" /boot/firmware/config.txt
+echo 'dtoverlay=dwc2' | sudo tee -a /boot/firmware/config.txt
 VUSB="true"
 break;;
 [Nn]* ) 
 echo -e '\033[35mThe pi will not mount as a drive\033[0m'
+sudo sed -i "s^dtoverlay=dwc2^^g" /boot/firmware/config.txt
 VUSB="false"
 break;;
 * ) echo -e '\033[31mPlease answer Y or N\033[0m';;
@@ -377,7 +544,8 @@ break;;
 * ) echo -e '\033[31mPlease answer Y or N\033[0m';;
 esac
 done
-echo 'address=/playstation.com/127.0.0.1
+echo 'address=/manuals.playstation.net/192.168.2.1
+address=/playstation.com/127.0.0.1
 address=/playstation.net/127.0.0.1
 address=/playstation.org/127.0.0.1
 address=/akadns.net/127.0.0.1
@@ -387,6 +555,8 @@ address=/edgekey.net/127.0.0.1
 address=/edgesuite.net/127.0.0.1
 address=/llnwd.net/127.0.0.1
 address=/scea.com/127.0.0.1
+address=/sie-rd.com/127.0.0.1
+address=/llnwi.net/127.0.0.1
 address=/sonyentertainmentnetwork.com/127.0.0.1
 address=/ribob01.net/127.0.0.1
 address=/cddbp.net/127.0.0.1
@@ -404,8 +574,10 @@ VMUSB='$VUSB'
 DTLINK='$DTLNK'
 RESTMODE='$RESTM'
 PPDBG='$PDBG'
-TIMEOUT="'$TOUT'm"' | sudo tee /boot/firmware/PPPwn/config.sh
-sudo rm -f /usr/lib/systemd/system/bluetooth.target
+TIMEOUT="'$TOUT'm"
+PYPWN='$UPYPWN'
+LEDACT="normal"
+DDNS=false' | sudo tee /boot/firmware/PPPwn/config.sh
 sudo rm -f /usr/lib/systemd/system/network-online.target
 sudo sed -i 's^sudo bash /boot/firmware/PPPwn/run.sh \&^^g' /etc/rc.local
 echo '[Service]
@@ -426,3 +598,8 @@ sudo sed -i "s^$CHSTN^$HSTN^g" /etc/hosts
 sudo sed -i "s^$CHSTN^$HSTN^g" /etc/hostname
 echo -e '\033[36mInstall complete,\033[33m Rebooting\033[0m'
 sudo reboot
+else
+echo "Update complete, Rebooting."  | sudo tee /dev/tty1 | sudo tee /dev/pts/* | sudo tee -a /boot/firmware/PPPwn/upd.log
+coproc read -t 6 && wait "$!" || true
+sudo reboot
+fi
